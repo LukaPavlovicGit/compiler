@@ -1,4 +1,4 @@
-Program -> { Block }
+Program -> main{ Block }
 Block -> { VarList StatementList }
 
 VarList ->  VarList VarDecl | VarDecl
