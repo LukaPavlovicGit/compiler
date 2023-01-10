@@ -1,0 +1,13 @@
+main(){
+    a,b,c:bool;
+    D,E,F:int;
+
+    D = 10;
+    E = 100;
+    F = 1000;
+
+    b = D < F;
+    c = F < E;
+
+    a = b || c;
+}

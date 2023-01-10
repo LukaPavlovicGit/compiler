@@ -1,0 +1,13 @@
+main(){
+    a:int;
+    b:int;
+    a= 1;
+    {
+        b:bool;
+        b=false;
+        repeat   until b;
+    }
+}
+
+
+

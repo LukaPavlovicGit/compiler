@@ -1,0 +1,25 @@
+main(){
+    a:int ;
+    q:int ;
+    b:real;
+    {
+        q: real;
+        a=1;
+        {
+            q: char;
+            a = 10;
+
+            {
+                 q: char;
+                 q: int;
+                 q = 10;
+            }
+        }
+    }
+    {
+        b:int;
+        a=2;
+    }
+}
+
+

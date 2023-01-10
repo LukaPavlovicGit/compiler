@@ -1,0 +1,776 @@
+//import section
+
+import java_cup.runtime.*;
+import java.io.*;
+import java.util.*;
+
+import SymbolTable.*;
+
+
+parser code{:
+
+        static private FileReader file;
+        static private MPLexer scanner;
+        static private MPParser parser;
+
+        public int errNo = 0;
+        public int warnNo = 0;
+        public int nestLevel= 0;
+        SymbolTable symbolTable;
+
+       public static void main( String[] args )
+       {
+          try
+          {
+               file = new FileReader( args[0] );
+               scanner = new MPLexer( file );
+               parser = new MPParser( scanner );
+               parser.parse();
+          }
+          catch( Exception e )
+          {
+               System.out.println(e);
+          }
+       }
+
+        public int getLine(){
+            return scanner.getLine();
+        }
+
+       public void checkWarnings(){
+          SymbolNode current = symbolTable.getVariables();
+          while ( current != null ){
+            Variable var = ( Variable ) current;
+            if ( var.last_def == -1 && var.last_use == -1 ){
+                System.out.println( "Upozorenje: Promenljiva " + var.name +
+                    " je deklarisana, ali se nigde ne koristi." );
+                warnNo++;
+            }else if ( var.last_def > var.last_use ){
+                System.out.println( "Upozorenje: Vrednost dodeljena promeljivoj " +
+                    var.name + " u liniji " + var.last_def + " se nigde ne koristi." );
+                warnNo++;
+            }
+            current = current.next;
+         }
+       }
+
+:};
+
+init with {:
+    symbolTable= new SymbolTable();
+:}
+
+
+//Terminal symbols
+terminal MAIN, INT, CHAR, REAL, BOOL, REPEAT, UNTIL, READ, WRITE;
+terminal LP, RP, LV, RV;
+terminal AND, OR, PLUS, MUL, MIN, DIV, LESS, LESSE, GREAT,GREATE, EQ, NEQ;
+terminal DOTCOMMA, COMMA, ASSIGN, DOUBLEDOT;
+terminal String ID;
+terminal Integer INTCONST;
+terminal Character CHARCONST;
+terminal Boolean BOOLCONST;
+terminal Double REALCONST;
+
+
+//Nonterminal symbols
+non terminal Program, Block, VarList, StatementList, VarDecl, Statement;
+non terminal Type Expression, AndExpression, RelExpression;
+non terminal RelOp;
+
+non terminal Type Tip, ArExpression , Term , Factor;
+non terminal ArrayList NameList;
+non terminal Constant  Const;
+
+non terminal RVZ, LVZ;
+
+
+//Grammar
+Program ::= MAIN LP RP Block
+         {:
+            System.out.println("Redukcija po smeni 0.");
+         :}
+        |   MAIN LP RP error:e
+            {:
+                System.out.println( "Nedostaje 'Block'" );
+                parser.errNo++;
+            :}
+        |   MAIN LP error:e
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+            		"Nedostaje ')'.");
+            	parser.errNo++;
+            
+            :}
+        |   MAIN error
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+            		"Nedostaje '('.");
+            	parser.errNo++;
+            :}   
+        |   error
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+            		"Nedostaje kljucna rec 'main' na pocetku.");
+            	parser.errNo++;
+            :}
+        ;
+
+
+
+Block ::= LVZ VarList StatementList RVZ
+         {:
+            System.out.println("Redukcija po smeni 1.");
+         :}
+        |  LVZ VarList StatementList error:e
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " +
+                    "Nedostaje '}'." );
+                parser.errNo++;
+            :}
+            | LVZ VarList error
+            {:
+                 System.out.println("Greska u liniji " + parser.getLine() + ": " +
+                    "Nedostaje statment-i." );
+                parser.errNo++;
+            :}
+        | LVZ StatementList RVZ
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                "Nedostaje deklaracije promenjivih.");
+                parser.errNo++;  
+            :}
+        | LVZ VarList RVZ
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                "Nedostaje stetments.");
+                parser.errNo++;
+            :}
+
+        | LVZ error
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                "Nedostaje stetments.");
+                parser.errNo++;            
+            :}
+        ;
+LVZ ::= LV 
+        {:
+            parser.nestLevel++;
+            System.out.println("Redukcija po smeni 2.");
+        :}
+    ;
+RVZ ::= RV
+        {:
+            parser.nestLevel--;
+            System.out.println("Redukcija po smeni 3.");
+        :}
+        ; 
+
+VarList ::=  VarList VarDecl
+          {:
+             System.out.println("Redukcija po smeni 4.");
+          :}
+        |   VarDecl
+         {:
+            System.out.println("Redukcija po smeni 5.");
+         :}
+        ;
+
+VarDecl ::= NameList:niz DOUBLEDOT Tip:t DOTCOMMA
+            {:
+                boolean flag = true;
+                for ( int i=0; i<niz.size(); i++ )
+					{
+					   String ime = (String) niz.get(i);
+					   
+					   if ( ! parser.symbolTable.addVar( ime, t,parser.nestLevel ) )
+					   {
+					   	 System.out.println( "Greska u liniji " + parser.getLine() + ": " + 
+                   			"Promenljiva " + ime + " je vec deklarisana." );
+            		     parser.errNo++;
+            		     flag = false;
+            		     break;
+					   }
+					}
+					if(flag){
+                        System.out.println("Redukcija po smeni 6.");
+                    }
+            
+            :}
+
+        |   NameList:niz DOUBLEDOT Tip:t error
+            {:
+
+                  // provera za ponovno deklarisanje
+                for ( int i=0; i<niz.size(); i++ )
+					{
+					   String ime = (String) niz.get(i);
+					   
+					   if ( ! parser.symbolTable.addVar( ime, t, parser.nestLevel ) )
+					   {
+					   	 System.out.println( "Greska u liniji " + parser.getLine() + ": " + 
+                   			"Promenljiva " + ime + " je vec deklarisana." );
+            		     parser.errNo++;
+					   }
+					}
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + "Nedostaje ';'.");
+                parser.errNo++;
+            :}
+        | NameList:niz DOUBLEDOT error
+            {:
+					Type t = parser.symbolTable.getType( "unknown" );
+					for ( int i=0; i<niz.size(); i++ )
+					{
+					   String ime = (String) niz.get(i);
+					   
+					   if ( ! parser.symbolTable.addVar( ime, t, parser.nestLevel ) )
+					   {
+					   	 System.out.println( "Greska u liniji " + parser.getLine() + ": " + 
+                   			"Promenljiva " + ime + " je vec deklarisana." );
+            		     parser.errNo++;
+					   }
+					}
+                   System.out.println( "Greska u liniji " + parser.getLine() + ": " + 
+                   		"Nekorektno ime tipa." );
+            		parser.errNo++;
+            :}
+        ;
+        
+
+NameList ::=   NameList:niz COMMA ID:ime
+                {:
+                    RESULT = niz;
+			 	    RESULT.add( ime );
+			 	    System.out.println("Redukcija po smeni 7.");
+                :}
+            |  NameList:niz COMMA error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje simbol ',' " );
+                    parser.errNo++;
+                    RESULT = niz;
+                :}
+            | NameList:niz ID
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje simbol ',' " );
+                    parser.errNo++;
+                    RESULT = niz;
+                :}
+            | ID:ime
+                {:
+                    RESULT = new ArrayList();
+                    RESULT.add( ime );
+                    System.out.println("Redukcija po smeni 8.");
+                :}
+            ;
+Tip ::= INT 
+         {:
+             RESULT = parser.symbolTable.getType( "int" );
+             System.out.println("Redukcija po smeni 9.");
+        :}
+        | CHAR 
+          {:
+             RESULT = parser.symbolTable.getType( "char" );
+             System.out.println("Redukcija po smeni 10.");
+          :}
+        | REAL
+          {:
+             RESULT = parser.symbolTable.getType( "real" );
+             System.out.println("Redukcija po smeni 11.");
+          :} 
+        | BOOL
+          {:
+             RESULT = parser.symbolTable.getType( "bool" );
+             System.out.println("Redukcija po smeni 12.");
+          :}
+        ;
+
+StatementList ::= StatementList Statement
+                {:
+                    System.out.println("Redukcija po smeni 13.");
+                :}
+            | Statement
+                {:
+                    System.out.println("Redukcija po smeni 14.");
+                :}
+            ;
+
+Statement ::= REPEAT StatementList UNTIL Expression:e DOTCOMMA
+                {:
+                        if(e.tkind != Type.BOOL){
+                            System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Expression izraz u repeat/until mora biti tipa bool ! " );
+                            parser.errNo++;
+                        }else{
+                            System.out.println("Redukcija po smeni 15.");
+                        }
+                :}
+            | REPEAT StatementList UNTIL Expression error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje ';' nakon izraza " );
+                    parser.errNo++;
+                :}
+            
+            | REPEAT StatementList UNTIL error
+                 {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje  'Expression' u petlji" );
+                    parser.errNo++;
+                :}  
+
+            | REPEAT StatementList error
+                 {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje 'until' za petlju" );
+                    parser.errNo++;
+                :}
+            | REPEAT error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje stetmentList za petlju" );
+                    parser.errNo++;
+                :}
+                
+            | ID:ime ASSIGN Expression:e DOTCOMMA
+                {:
+                    Variable var = parser.symbolTable.getVar( ime, parser.nestLevel, false );
+                    if ( var == null ){
+                        System.out.println( "Greska u liniji " + parser.getLine() + 
+                            ": promenljiva " + ime + " nije deklarisana.");
+                        parser.errNo++;
+                    }else{
+                         if(e.tkind == Type.UNKNOWN){
+                            System.out.println( "Greska u liniji " + parser.getLine() + 
+                                ": Ne moze se proslediti ne validan expression.");
+                            parser.errNo++;
+                        }else{
+                            
+                            if(( e.tkind == Type.BOOL && var.type.tkind != Type.BOOL ) ||
+                                    ( e.tkind != Type.BOOL && var.type.tkind == Type.BOOL )
+                                ){
+                                System.out.println( "Greska u liniji " + parser.getLine() + 
+                                ": Neslaganje tipa u naredbi dodele." );
+                                parser.errNo++;  
+                            }else{
+                                if(var.type.conversionDif(e) < 0){
+                                    System.out.println( "Greska u liniji " + parser.getLine() + 
+                                    ": Ne moze proslediti visi tipa nizem tipu." );
+                                    parser.errNo++; 
+                                }else{
+                                    var.last_def = parser.getLine();
+                                    System.out.println("Redukcija po smeni 16.");
+                                }
+                            }
+                        }
+
+                    }
+                                    
+                :}
+            | ID ASSIGN Expression error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje ';' nakon izraza " );
+                    parser.errNo++;
+                :}
+            | ID:id ASSIGN error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje deklaracija : "+ id );
+                    parser.errNo++;
+                :}
+            | error ASSIGN error
+                 {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje = za ");
+                    parser.errNo++;
+                :} 
+            
+            | READ LP NameList:niz RP DOTCOMMA
+                {:
+
+                 for ( int i=0; i<niz.size(); i++ ){
+					String ime = (String) niz.get(i);
+                    Variable var = parser.symbolTable.getVar( ime, parser.nestLevel, false );
+                    if ( var == null ){
+                        System.out.println( "Greska u liniji " + parser.getLine() + 
+                            ": promenljiva " + ime + " nije deklarisana.");
+                        parser.errNo++;
+                    }
+                    else{
+                        var.last_def = parser.getLine();
+                        System.out.println("Redukcija po smeni 17.");
+                    }
+				 }
+                    
+                :}
+            | READ LP NameList RP error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje ';' nakon izraza " );
+                    parser.errNo++;
+                :} 
+            | READ LP NameList error
+                 {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje ')' nakon izraza " );
+                    parser.errNo++;
+                :} 
+            | READ LP RP DOTCOMMA
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje promenjiva unutar read" );
+                    parser.errNo++;
+                :}
+            | READ LP RP error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje promenjiva unutar read" );
+                    parser.errNo++;
+                :}
+            | READ LP error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nekorektno koriscenje read funkcije : ' namelist ) '" );
+                    parser.errNo++;
+                :}
+            |  READ:r error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Funkcija: read nije lepo deklarisana " );
+                    parser.errNo++;
+                :}
+
+            |  Block
+            {:
+                System.out.println("Redukcija po smeni 18.");
+            :}
+            ;
+
+Expression ::= Expression:i1 OR AndExpression:i2
+                {:
+                    if(i1.tkind != Type.BOOL || i2.tkind != Type.BOOL ){
+                        System.out.println("Greska u liniji "+ parser.getLine()+": "+
+                            "Primenjen logički operator nad operandima koji nisu bool");
+                        RESULT= parser.symbolTable.getType("unknown");        
+                        parser.errNo++;
+                    }else{
+                        RESULT = parser.symbolTable.getType("bool");
+                        System.out.println("Redukcija po smeni 19.");
+                    }
+                :}
+            | Expression OR error
+                {:
+                   System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Nedostaje vrednost za uporedjivanje " );
+                    parser.errNo++; 
+                :}
+
+            | AndExpression:i1 
+                {:
+                    RESULT = i1.type;
+                    System.out.println("Redukcija po smeni 20.");
+                :}
+            ;
+
+AndExpression ::= AndExpression:i1 AND RelExpression:i2
+                    {:
+                        if(i1.tkind != Type.BOOL || i2.tkind != Type.BOOL ){
+                            System.out.println("Greska u liniji "+ parser.getLine()+": "+
+                                "Primenjen logički operator nad operandima koji nisu bool");
+                            RESULT= parser.symbolTable.getType("unknown");        
+                            parser.errNo++;
+                        }else{
+                            RESULT = parser.symbolTable.getType("bool");
+                            System.out.println("Redukcija po smeni 21.");
+                        }
+                        
+                    :}
+                | AndExpression AND error
+                    {:
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Nedostaje vrednost za '&&' " );
+                        RESULT= parser.symbolTable.getType("unknown");        
+                        parser.errNo++; 
+                    :}
+                | RelExpression:i
+                    {:
+                        RESULT = i.type;
+                        System.out.println("Redukcija po smeni 22.");
+                    :}
+                ;
+RelExpression ::= ArExpression:i1 RelOp ArExpression:i2 
+                    {:
+                        if(i1.tkind == Type.UNKNOWN ||  
+                                 i2.tkind == Type.UNKNOWN){
+                            System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Primenjen relacioni operator nad operandima koji unknown ");
+                            RESULT= parser.symbolTable.getType("unknown");
+                            parser.errNo++;  
+                        }else{
+                            if(i1.tkind == Type.BOOL ||  
+                                 i2.tkind == Type.BOOL){
+                                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                    "Primenjen relacioni operator nad operandima koji su bool ");
+                                RESULT= parser.symbolTable.getType("unknown");
+                                parser.errNo++;  
+                            }else{
+                                RESULT = parser.symbolTable.getType("bool");
+                                System.out.println("Redukcija po smeni 23.");
+                            }
+                        }
+                    :}
+                | ArExpression RelOp:ro error
+                     {:
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Relaciona operacija nije korektno upotrebljena fali expression' " );
+                        RESULT= parser.symbolTable.getType("unknown");
+                        parser.errNo++; 
+                    :}
+                | ArExpression:i1
+                    {:
+                        RESULT = i1;
+                        System.out.println("Redukcija po smeni 24.");
+                    :}
+                ;
+
+RelOp ::= LESS
+             {:
+                System.out.println("Redukcija po smeni 25.");
+             :}
+        | LESSE
+             {:
+                System.out.println("Redukcija po smeni 26.");
+             :}
+        | EQ
+             {:
+                System.out.println("Redukcija po smeni 27.");
+             :}
+        | NEQ
+             {:
+                System.out.println("Redukcija po smeni 28.");
+             :}
+        | GREAT
+             {:
+                System.out.println("Redukcija po smeni 29.");
+             :}
+        | GREATE
+             {:
+                System.out.println("Redukcija po smeni 30.");
+             :}
+        ;
+ArExpression ::= ArExpression:i1 PLUS Term:i2
+                {:
+                    if( i1.tkind == Type.UNKNOWN || i2.tkind== Type.UNKNOWN){
+                           System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Operator + se ne moze primeniti na uknown tipu ");
+                            RESULT= parser.symbolTable.getType("unknown");
+                            parser.errNo++;
+                    }else{
+                        if ( i1.tkind == Type.BOOL || i2.tkind == Type.BOOL ){
+                            System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operator + se ne moze primeniti nad operandima tipa " + 
+                            i1.name + " i " + i2.name );
+                            RESULT= parser.symbolTable.getType("unknown");
+                            parser.errNo++;
+                        }
+
+                        RESULT = i1.tkind > i2.tkind ? i1 : i2;
+                        System.out.println("Redukcija po smeni 31.");
+                    }
+                :}
+            | ArExpression PLUS error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operacija: + nije korektno upotrebljena fali drugi operand' " );
+                    RESULT= parser.symbolTable.getType("unknown");
+                    parser.errNo++; 
+                 :}
+            | ArExpression:i1 MIN Term:i2 
+                {:
+                    if( i1.tkind == Type.UNKNOWN || i2.tkind== Type.UNKNOWN){
+                           System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                                "Operator - se ne moze primeniti na uknown tipu ");
+                            RESULT= parser.symbolTable.getType("unknown");
+                            parser.errNo++;
+                    }else{
+                        if ( i1.tkind == Type.BOOL || i2.tkind == Type.BOOL ){
+                            System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operator - se ne moze primeniti nad operandima tipa " + 
+                            i1.name + " i " + i2.name );
+                            RESULT= parser.symbolTable.getType("unknown");
+                            parser.errNo++;
+                        }
+
+                        RESULT = i1.tkind > i2.tkind ?  i1 : i2;
+                        System.out.println("Redukcija po smeni 32.");
+                    }
+                :}
+            |ArExpression MIN:r error
+                {:
+                    System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operacija: - nije korektno upotrebljena fali drugi operand' " );
+                    RESULT= parser.symbolTable.getType("unknown");
+                    parser.errNo++; 
+                :}
+            | Term:t
+                {:
+                    RESULT=t.type;
+                    System.out.println("Redukcija po smeni 33.");
+                :}
+            ;
+Term ::= Term:i1 MUL Factor:i2 
+            {:
+           	    if( i1.tkind == Type.UNKNOWN || i2.tkind== Type.UNKNOWN){
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operator * se ne moze primeniti na uknown tipu ");
+                        RESULT= parser.symbolTable.getType("unknown");
+                        parser.errNo++;
+                }else{
+                    if ( i1.tkind == Type.BOOL || i2.tkind == Type.BOOL ){
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Operator + se ne moze primeniti nad operandima tipa " + 
+                        i1.name + " i " + i2.name );
+                        RESULT= parser.symbolTable.getType("unknown");
+                        parser.errNo++;
+                    }
+
+                    RESULT = i1.tkind > i2.tkind ?  i1 : i2;
+                    System.out.println("Redukcija po smeni 34.");
+                }
+           :}
+        | Term MUL:r error
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Operacija: * nije korektno upotrebljena nad drugim parametrom' " );
+                RESULT= parser.symbolTable.getType("unknown");
+                parser.errNo++; 
+            :}
+        | Term:i1 DIV Factor:i2
+            {:
+           	  if( i1.tkind == Type.UNKNOWN || i2.tkind== Type.UNKNOWN){
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                            "Operator + se ne moze primeniti na uknown tipu ");
+                        RESULT= parser.symbolTable.getType("unknown");
+                        parser.errNo++;
+                }else{
+                    if ( i1.tkind == Type.BOOL || i2.tkind == Type.BOOL ){
+                        System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                        "Operator + se ne moze primeniti nad operandima tipa " + 
+                        i1.name + " i " + i2.name );
+                        RESULT= parser.symbolTable.getType("unknown");
+                        parser.errNo++;
+                    }
+
+                    RESULT = i1.tkind > i2.tkind ?  i1 : i2;
+                    System.out.println("Redukcija po smeni 35.");
+                }
+           :}
+        | Term DIV:r error
+            {:
+                System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+                       "Operacija: / nije korektno upotrebljena nedostaje drugi operand." );
+                RESULT= parser.symbolTable.getType("unknown");
+                parser.errNo++; 
+            :} 
+        | Factor:f
+            {:
+                RESULT=f;
+                System.out.println("Redukcija po smeni 36.");
+            :}
+        ;
+
+Factor ::= ID :ime
+            {:
+              Variable var = parser.symbolTable.getVar( ime, parser.nestLevel, false );
+		      if ( var == null ){
+		      	System.out.println( "Greska u liniji " + parser.getLine() + 
+		      		": promenljiva " + ime + " nije deklarisana.");
+		      	RESULT = parser.symbolTable.getType( "unknown" );
+		      	parser.errNo++;
+		      }else {
+		      	RESULT = var.type;
+		      	if ( var.last_def == -1 ){
+		      		System.out.println( "Greska u liniji " + parser.getLine() + 
+		      			": promenljiva " + ime + " nije inicijalizovana.");
+		      		parser.errNo++;
+		      	}
+		        var.last_use = parser.getLine();
+		        System.out.println("Redukcija po smeni 37.");
+		      }
+            :}
+        | Const:k
+            {:
+                RESULT= k.type;
+                System.out.println("Redukcija po smeni 38.");
+            :}
+        | LP Expression:i RP
+            {:
+                RESULT = i;
+                System.out.println("Redukcija po smeni 39.");
+            :}
+        | LP Expression:i error
+            {:
+                System.out.println( "Greska u liniji " + parser.getLine() + ": " + 
+              	    "Nedostaje ')'.");
+                parser.errNo++;
+            :}
+        | LP error
+            {:
+              System.out.println("Greska u liniji " + parser.getLine() + ": " + 
+              	"Nekorektan izraz.");
+              parser.errNo++;
+           :}
+         ;
+Const ::=   INTCONST:c
+              {:
+                 RESULT = new Constant( parser.symbolTable.getType( "int" ), c );
+                 System.out.println("Redukcija po smeni 40.");
+              :}
+            | CHARCONST:c
+              {:
+                 RESULT = new Constant( parser.symbolTable.getType( "char" ), c );
+                 System.out.println("Redukcija po smeni 41.");
+              :}
+            | BOOLCONST:b
+               {:
+                 RESULT = new Constant( parser.symbolTable.getType( "bool" ), b );
+                 System.out.println("Redukcija po smeni 42.");
+               :} 
+            | REALCONST: r
+                {:
+                  RESULT = new Constant( parser.symbolTable.getType( "real" ), r );
+                  System.out.println("Redukcija po smeni 43.");
+                :}
+            ;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
