@@ -9,7 +9,7 @@ public class Variable extends SymbolNode {
 	public Variable(String name, Type type, SymbolNode next, int nestLevel){
 		super( name, SymbolNode.VARIABLE, type, next );
 		last_def = -1;
-		last_def = -1;
+		last_use = -1;
 		this.nestLevel=nestLevel;
 	}
 	

@@ -13,10 +13,10 @@ parser code{:
         static private MPLexer scanner;
         static private MPParser parser;
 
-        public int errNo = 0;
-        public int warnNo = 0;
-        public int nestLevel= 0;
-        SymbolTable symbolTable;
+        public static int errNo = 0;
+        public static int warnNo = 0;
+        public static int nestLevel= 0;
+        public static SymbolTable symbolTable;
 
        public static void main( String[] args )
        {
@@ -26,18 +26,27 @@ parser code{:
                scanner = new MPLexer( file );
                parser = new MPParser( scanner );
                parser.parse();
+               checkWarnings();
+               if ( parser.errNo == 0 && parser.warnNo == 0 )
+                   System.out.println( "Analiza zavrsena. U kodu nema gresaka." );
+               else
+                  System.out.println( "Analiza zavrsena. Broj gresaka: " + parser.errNo
+                     + " Broj upozorenja: " + parser.warnNo );
           }
           catch( Exception e )
           {
                System.out.println(e);
           }
+
+
+
        }
 
         public int getLine(){
             return scanner.getLine();
         }
 
-       public void checkWarnings(){
+       private static void checkWarnings(){
           SymbolNode current = symbolTable.getVariables();
           while ( current != null ){
             Variable var = ( Variable ) current;
